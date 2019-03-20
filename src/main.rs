@@ -30,9 +30,6 @@ impl PlayerState {
                 print_controls();
                 self
             },
-            Action::None => {
-                self
-            }
         }
     }
 }
