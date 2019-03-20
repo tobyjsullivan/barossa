@@ -12,13 +12,30 @@ impl PlayerState {
         PlayerState {
             day: 1,
             balance: 1000,
-            location: Location::Home,
+            location: Location::TenundaHotel,
         }
     }
 
     fn apply_action(mut self, action: PlayerAction) -> Self {
         match action {
+            PlayerAction::BuyDrink => {
+                self.balance -= 10;
+                print_finances(&self);
+                println!("Cheers!");
+                self
+            }
+            PlayerAction::Go { destination } => {
+                self.location = destination;
+                print_location(&self);
+                self
+            }
             PlayerAction::Sleep => {
+                if let Some(cost) = self.location.sleep_cost() {
+                    self.balance -= cost;
+                    print_finances(&self);
+                }
+                println!("Zzzzzzz...");
+
                 self.day += 1;
                 self
             }
@@ -26,9 +43,19 @@ impl PlayerState {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Location {
-    Home,
+    TenundaHotel,
+    TenundaStreets,
+}
+
+impl Location {
+    fn sleep_cost(&self) -> Option<u64> {
+        match self {
+            Location::TenundaHotel => Some(150),
+            Location::TenundaStreets => None,
+        }
+    }
 }
 
 struct MenuHelpText {
@@ -44,7 +71,7 @@ struct Menu {
 impl Menu {
     fn parse_input(&self, input: &str) -> Option<Command> {
         match input {
-            "h" | "help" => Some(Command::System {
+            "help" => Some(Command::System {
                 action: SystemAction::Help,
             }),
             "x" => Some(Command::System {
@@ -55,16 +82,49 @@ impl Menu {
     }
 }
 
-const MAIN_MENU: Menu = Menu {
+const TENUNDA_HOTEL_MENU: Menu = Menu {
     parser: |input: &str| match input {
+        "b" => Some(Command::Player {
+            action: PlayerAction::BuyDrink,
+        }),
+        "o" => Some(Command::Player {
+            action: PlayerAction::Go {
+                destination: Location::TenundaStreets,
+            },
+        }),
         "s" => Some(Command::Player {
             action: PlayerAction::Sleep,
         }),
         _ => None,
     },
+    help_text: &[
+        MenuHelpText {
+            command: "b",
+            help_text: "Buy a beer. ($10)",
+        },
+        MenuHelpText {
+            command: "o",
+            help_text: "Go outside.",
+        },
+        MenuHelpText {
+            command: "s",
+            help_text: "Sleep. ($150)",
+        },
+    ],
+};
+
+const TENUNDA_STREETS_MENU: Menu = Menu {
+    parser: |input: &str| match input {
+        "h" => Some(Command::Player {
+            action: PlayerAction::Go {
+                destination: Location::TenundaHotel,
+            },
+        }),
+        _ => None,
+    },
     help_text: &[MenuHelpText {
-        command: "s",
-        help_text: "Sleep.",
+        command: "h",
+        help_text: "Go to the hotel.",
     }],
 };
 
@@ -83,15 +143,34 @@ enum SystemAction {
 
 #[derive(PartialEq)]
 enum PlayerAction {
+    BuyDrink,
+    Go { destination: Location },
     Sleep,
 }
 
-fn summarise(state: &PlayerState) -> String {
-    let bar = "****************";
-    format!(
-        "{}\nIt is Day {}\nYou have ${}",
-        bar, state.day, state.balance
-    )
+fn print_summary(state: &PlayerState) {
+    println!("****************");
+    print_day(state);
+    print_finances(state);
+    print_location(state);
+
+    println!();
+}
+
+fn print_day(state: &PlayerState) {
+    println!("It is Day {}", state.day);
+}
+
+fn print_finances(state: &PlayerState) {
+    println!("You have ${}", state.balance);
+}
+
+fn print_location(state: &PlayerState) {
+    let out = match state.location {
+        Location::TenundaHotel => format!("You are at the Tenunda Hotel."),
+        Location::TenundaStreets => format!("You are on the streets of Tenunda"),
+    };
+    println!("{}", out);
 }
 
 fn print_commands(menu: &Menu) {
@@ -101,13 +180,13 @@ fn print_commands(menu: &Menu) {
         println!("   {}: {}", opt.command, opt.help_text);
     }
     println!();
-    println!("   h: Print this help.");
+    println!("   help: Print this help.");
     println!("   x: Exit.");
 }
 
 fn next_command(menu: &Menu) -> Command {
     loop {
-        print!("Input: ");
+        print!("> ");
         if let Err(_) = io::stdout().flush() {
             panic!("Unexpected error during flush.");
         }
@@ -138,14 +217,10 @@ fn read_line() -> String {
     String::from(command)
 }
 
-fn print_summary(state: &PlayerState) {
-    println!("{}", summarise(state));
-    println!();
-}
-
 fn get_menu(player_state: &PlayerState) -> Menu {
     match player_state.location {
-        Location::Home => MAIN_MENU,
+        Location::TenundaHotel => TENUNDA_HOTEL_MENU,
+        Location::TenundaStreets => TENUNDA_STREETS_MENU,
     }
 }
 
@@ -154,12 +229,13 @@ fn main() {
 
     let mut last_day = 0;
     loop {
+        let menu = get_menu(&player_state);
         if player_state.day > last_day {
             print_summary(&player_state);
+            print_commands(&menu);
         }
         last_day = player_state.day;
 
-        let menu = get_menu(&player_state);
         let command = next_command(&menu);
         match command {
             Command::System {
