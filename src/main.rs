@@ -18,75 +18,116 @@ impl PlayerState {
 
     fn apply_action(mut self, action: Action) -> Self {
         match action {
-            Action::None => {
+            Action::Sleep => {
                 self.day += 1;
                 self
             },
             Action::Exit => {
                 self.done = true;
                 self
+            },
+            Action::Help => {
+                print_controls();
+                self
+            },
+            Action::None => {
+                self
             }
         }
     }
 }
 
+struct MainMenu {
+
+}
+
+impl MainMenu {
+    fn parse(cmd: &str) -> Option<Action> {
+        match cmd {
+            "h" | "help" => Some(Action::Help),
+            "s" => Some(Action::Sleep),
+            "x" => Some(Action::Exit),
+            _ => {
+                None
+            },
+        }
+    }
+}
+
+#[derive(PartialEq)]
 enum Action {
-    None,
     Exit,
+    Help,
+    Sleep,
 }
 
 fn summarise(state: &PlayerState) -> String {
-    format!("It is Day {}\nYou have ${}", state.day, state.balance)
+    let bar = "****************";
+    format!("{}\nIt is Day {}\nYou have ${}", bar, state.day, state.balance)
 }
 
 fn capture_input() -> Action {
-    print!("Input: ");
-    if let Err(_) = io::stdout().flush() {
-        panic!("Unexpected error during flush.");
-    }
+    loop {
+        print!("Input: ");
+        if let Err(_) = io::stdout().flush() {
+            panic!("Unexpected error during flush.");
+        }
 
+        let command = read_line();
+        let parsed = MainMenu::parse(&command);
+
+        match parsed {
+            Some(Action::Help) => {
+                print_controls();
+                // Restart loop
+            },
+            Some(action) => {
+                return action;
+            },
+            None => {
+                println!("Unknown command: {:?}", command);
+                // Restart loop
+            },
+        }
+    }
+}
+
+fn read_line() -> String {
     let mut buffer = String::new();
     let res = io::stdin().read_line(&mut buffer);
 
     if let Err(_) = res {
         panic!("error during read");
     }
-
-    match buffer.trim() {
-        "c" => {
-            Action::None
-        },
-        "x" => {
-            Action::Exit
-        },
-        _ => Action::None,
-    }
+    let command = buffer.trim();
+    String::from(command)
 }
 
 fn print_controls() {
     println!("Available actions:");
-    println!("   c: Continue without action.");
+    println!("   s: Sleep.");
     println!("   x: Exit.");
 }
 
 fn print_summary(state: &PlayerState) {
     println!("{}", summarise(state));
+    println!();
 }
 
 fn run_turn(state: PlayerState) -> PlayerState {
-    print_summary(&state);
-    println!();
-    print_controls();
-    println!();
     let action = capture_input();
-    let state = PlayerState::apply_action(state, action);
-    state
+    PlayerState::apply_action(state, action)
 }
 
 fn main() {
     let mut state = PlayerState::new();
 
+    let mut last_day = 0;
     loop {
+        if state.day > last_day {
+            print_summary(&state);
+        }
+        last_day = state.day;
         state = run_turn(state);
 
         if state.done {
