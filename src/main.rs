@@ -4,7 +4,6 @@ use std::io::{self, Write};
 struct PlayerState {
     day: u8,
     balance: u64,
-    done: bool,
 }
 
 impl PlayerState {
@@ -12,79 +11,142 @@ impl PlayerState {
         PlayerState {
             day: 1,
             balance: 1000,
-            done: false,
         }
     }
 
-    fn apply_action(mut self, action: Action) -> Self {
+    fn apply_action(mut self, action: PlayerAction) -> Self {
         match action {
-            Action::Sleep => {
+            PlayerAction::Sleep => {
                 self.day += 1;
                 self
-            },
-            Action::Exit => {
-                self.done = true;
-                self
-            },
-            Action::Help => {
-                print_controls();
-                self
-            },
+            }
         }
     }
 }
 
-struct MainMenu {
-
+struct MenuHelpText {
+    command: &'static str,
+    help_text: &'static str,
 }
 
-impl MainMenu {
-    fn parse(cmd: &str) -> Option<Action> {
-        match cmd {
-            "h" | "help" => Some(Action::Help),
-            "s" => Some(Action::Sleep),
-            "x" => Some(Action::Exit),
-            _ => {
-                None
+struct Menu {
+    parser: fn(&str) -> Option<Command>,
+    help_text: &'static [MenuHelpText],
+}
+
+trait CommandParser {
+    fn parse(input: &str) -> Option<Command>;
+    fn help_text() -> Vec<MenuHelpText>;
+}
+
+const MAIN_MENU: Menu = Menu {
+    parser: |input: &str| match input {
+        "s" => Some(Command::Player {
+            action: PlayerAction::Sleep,
+        }),
+        _ => None,
+    },
+    help_text: &[MenuHelpText {
+        command: "s",
+        help_text: "Sleep.",
+    }],
+};
+
+struct UIState {
+    menu_stack: Vec<Menu>,
+}
+
+impl UIState {
+    fn new() -> Self {
+        Self {
+            menu_stack: Vec::new(),
+        }
+    }
+
+    fn push_menu(&mut self, menu: Menu) {
+        self.menu_stack.push(menu);
+    }
+
+    fn pop_menu(&mut self) {
+        self.menu_stack.pop();
+    }
+
+    fn parse_input(&self, input: &str) -> Option<Command> {
+        match input {
+            "h" | "help" => Some(Command::System {
+                action: SystemAction::Help,
+            }),
+            "x" => Some(Command::System {
+                action: SystemAction::Exit,
+            }),
+            _ => match self.menu_stack.last() {
+                Some(menu) => (menu.parser)(input),
+                None => None,
             },
         }
     }
+
+    fn print_commands(&self) {
+        println!("Available actions:");
+        match self.menu_stack.last() {
+            Some(menu) => {
+                for i in 0..menu.help_text.len() {
+                    let opt = &menu.help_text[i];
+                    println!("   {}: {}", opt.command, opt.help_text);
+                }
+            }
+            None => {}
+        }
+        println!();
+        println!("   h: Print this help.");
+        println!("   x: Exit.");
+    }
+}
+
+/// A list of all possible input commands.
+/// Intended to decouple CLI inputs from actual command handling.
+enum Command {
+    System { action: SystemAction },
+    Player { action: PlayerAction },
 }
 
 #[derive(PartialEq)]
-enum Action {
+enum SystemAction {
     Exit,
     Help,
+}
+
+#[derive(PartialEq)]
+enum PlayerAction {
     Sleep,
 }
 
 fn summarise(state: &PlayerState) -> String {
     let bar = "****************";
-    format!("{}\nIt is Day {}\nYou have ${}", bar, state.day, state.balance)
+    format!(
+        "{}\nIt is Day {}\nYou have ${}",
+        bar, state.day, state.balance
+    )
 }
 
-fn capture_input() -> Action {
+fn capture_input(ui_state: &UIState) -> Command {
     loop {
         print!("Input: ");
         if let Err(_) = io::stdout().flush() {
             panic!("Unexpected error during flush.");
         }
 
-        let command = read_line();
-        let parsed = MainMenu::parse(&command);
+        let input = read_line();
+        let parsed = ui_state.parse_input(&input);
 
         match parsed {
-            Some(Action::Help) => {
-                print_controls();
-                // Restart loop
-            },
-            Some(action) => {
-                return action;
-            },
+            Some(command) => {
+                return command;
+            }
             None => {
-                println!("Unknown command: {:?}", command);
+                println!("Unknown command: {:?}", input);
                 // Restart loop
-            },
+            }
         }
     }
 }
@@ -100,35 +162,40 @@ fn read_line() -> String {
     String::from(command)
 }
 
-fn print_controls() {
-    println!("Available actions:");
-    println!("   s: Sleep.");
-    println!("   x: Exit.");
-}
-
 fn print_summary(state: &PlayerState) {
     println!("{}", summarise(state));
     println!();
 }
 
-fn run_turn(state: PlayerState) -> PlayerState {
-    let action = capture_input();
-    PlayerState::apply_action(state, action)
-}
-
 fn main() {
-    let mut state = PlayerState::new();
+    let mut ui_state = UIState::new();
+    ui_state.push_menu(MAIN_MENU);
+
+    let mut player_state = PlayerState::new();
 
     let mut last_day = 0;
     loop {
-        if state.day > last_day {
-            print_summary(&state);
+        if player_state.day > last_day {
+            print_summary(&player_state);
         }
-        last_day = state.day;
-        state = run_turn(state);
+        last_day = player_state.day;
 
-        if state.done {
-            break;
+        let command = capture_input(&ui_state);
+        match command {
+            Command::System {
+                action: SystemAction::Help,
+            } => {
+                ui_state.print_commands();
+                continue;
+            }
+            Command::System {
+                action: SystemAction::Exit,
+            } => {
+                break;
+            }
+            Command::Player { action } => {
+                player_state = player_state.apply_action(action);
+            }
         }
     }
 
