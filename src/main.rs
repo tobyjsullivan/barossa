@@ -4,6 +4,7 @@ use std::io::{self, Write};
 struct PlayerState {
     day: u8,
     balance: u64,
+    location: Location,
 }
 
 impl PlayerState {
@@ -11,6 +12,7 @@ impl PlayerState {
         PlayerState {
             day: 1,
             balance: 1000,
+            location: Location::Home,
         }
     }
 
@@ -24,6 +26,11 @@ impl PlayerState {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Location {
+    Home,
+}
+
 struct MenuHelpText {
     command: &'static str,
     help_text: &'static str,
@@ -34,9 +41,18 @@ struct Menu {
     help_text: &'static [MenuHelpText],
 }
 
-trait CommandParser {
-    fn parse(input: &str) -> Option<Command>;
-    fn help_text() -> Vec<MenuHelpText>;
+impl Menu {
+    fn parse_input(&self, input: &str) -> Option<Command> {
+        match input {
+            "h" | "help" => Some(Command::System {
+                action: SystemAction::Help,
+            }),
+            "x" => Some(Command::System {
+                action: SystemAction::Exit,
+            }),
+            _ => (self.parser)(input),
+        }
+    }
 }
 
 const MAIN_MENU: Menu = Menu {
@@ -51,57 +67,6 @@ const MAIN_MENU: Menu = Menu {
         help_text: "Sleep.",
     }],
 };
-
-struct UIState {
-    menu_stack: Vec<Menu>,
-}
-
-impl UIState {
-    fn new() -> Self {
-        Self {
-            menu_stack: Vec::new(),
-        }
-    }
-
-    fn push_menu(&mut self, menu: Menu) {
-        self.menu_stack.push(menu);
-    }
-
-    fn pop_menu(&mut self) {
-        self.menu_stack.pop();
-    }
-
-    fn parse_input(&self, input: &str) -> Option<Command> {
-        match input {
-            "h" | "help" => Some(Command::System {
-                action: SystemAction::Help,
-            }),
-            "x" => Some(Command::System {
-                action: SystemAction::Exit,
-            }),
-            _ => match self.menu_stack.last() {
-                Some(menu) => (menu.parser)(input),
-                None => None,
-            },
-        }
-    }
-
-    fn print_commands(&self) {
-        println!("Available actions:");
-        match self.menu_stack.last() {
-            Some(menu) => {
-                for i in 0..menu.help_text.len() {
-                    let opt = &menu.help_text[i];
-                    println!("   {}: {}", opt.command, opt.help_text);
-                }
-            }
-            None => {}
-        }
-        println!();
-        println!("   h: Print this help.");
-        println!("   x: Exit.");
-    }
-}
 
 /// A list of all possible input commands.
 /// Intended to decouple CLI inputs from actual command handling.
@@ -129,7 +94,18 @@ fn summarise(state: &PlayerState) -> String {
     )
 }
 
-fn capture_input(ui_state: &UIState) -> Command {
+fn print_commands(menu: &Menu) {
+    println!("Available actions:");
+    for i in 0..menu.help_text.len() {
+        let opt = &menu.help_text[i];
+        println!("   {}: {}", opt.command, opt.help_text);
+    }
+    println!();
+    println!("   h: Print this help.");
+    println!("   x: Exit.");
+}
+
+fn next_command(menu: &Menu) -> Command {
     loop {
         print!("Input: ");
         if let Err(_) = io::stdout().flush() {
@@ -137,7 +113,7 @@ fn capture_input(ui_state: &UIState) -> Command {
         }
 
         let input = read_line();
-        let parsed = ui_state.parse_input(&input);
+        let parsed = menu.parse_input(&input);
 
         match parsed {
             Some(command) => {
@@ -167,10 +143,13 @@ fn print_summary(state: &PlayerState) {
     println!();
 }
 
-fn main() {
-    let mut ui_state = UIState::new();
-    ui_state.push_menu(MAIN_MENU);
+fn get_menu(player_state: &PlayerState) -> Menu {
+    match player_state.location {
+        Location::Home => MAIN_MENU,
+    }
+}
 
+fn main() {
     let mut player_state = PlayerState::new();
 
     let mut last_day = 0;
@@ -180,12 +159,13 @@ fn main() {
         }
         last_day = player_state.day;
 
-        let command = capture_input(&ui_state);
+        let menu = get_menu(&player_state);
+        let command = next_command(&menu);
         match command {
             Command::System {
                 action: SystemAction::Help,
             } => {
-                ui_state.print_commands();
+                print_commands(&menu);
                 continue;
             }
             Command::System {
