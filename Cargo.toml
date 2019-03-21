@@ -5,3 +5,4 @@ authors = ["Toby Sullivan <toby.s@canva.com>"]
 edition = "2018"
 
 [dependencies]
+colored = "1.7"

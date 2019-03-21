@@ -2,6 +2,10 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+extern crate colored;
+
+use colored::*;
+
 #[derive(Clone)]
 struct GameState {
     day: u8,
@@ -16,7 +20,15 @@ impl GameState {
         Self {
             day: 1,
             player_state,
-            event_log: Vec::new(),
+            event_log: vec![
+                Event::DayChanged { to: 1 },
+                Event::BalanceChanged {
+                    to: player_state.balance,
+                },
+                Event::LocationChanged {
+                    to: player_state.location,
+                },
+            ],
             show_help: true,
             done: false,
         }
@@ -45,8 +57,8 @@ impl GameState {
     fn apply_player_action(mut self, action: PlayerAction) -> Self {
         match action {
             PlayerAction::BuyDrink { cost } => {
-                self.change_balance(0 - cost);
                 self.drink_beer();
+                self.change_balance(0 - cost);
                 self
             }
             PlayerAction::Go { destination } => {
@@ -54,11 +66,11 @@ impl GameState {
                 self
             }
             PlayerAction::Sleep { cost } => {
+                self.sleep();
+                self.change_day(1);
                 if let Some(cost) = cost {
                     self.change_balance(0 - cost);
                 }
-                self.sleep();
-                self.change_day(1);
 
                 self
             }
@@ -66,16 +78,14 @@ impl GameState {
     }
 
     fn change_balance(&mut self, delta: i64) {
-        let from = self.player_state.balance;
-        let to = from + delta;
+        let to = self.player_state.balance + delta;
         self.player_state.balance = to;
-        self.event_log.push(Event::BalanceChanged { from, to });
+        self.event_log.push(Event::BalanceChanged { to });
     }
 
     fn change_location(&mut self, to: Location) {
-        let from = self.player_state.location;
         self.player_state.location = to;
-        self.event_log.push(Event::LocationChanged { from, to });
+        self.event_log.push(Event::LocationChanged { to });
     }
 
     fn drink_beer(&mut self) {
@@ -167,8 +177,8 @@ enum Event {
     Slept,
     DayChanged { to: u8 },
     DrankBeer,
-    LocationChanged { from: Location, to: Location },
-    BalanceChanged { from: i64, to: i64 },
+    LocationChanged { to: Location },
+    BalanceChanged { to: i64 },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -286,7 +296,6 @@ fn print_commands(game_state: &GameState) {
         (_, _) => Ordering::Equal,
     });
 
-    println!("Available actions:");
     let mut sys_cmds = Vec::new();
     for &command in &commands {
         // Push system commands to a special section at the end.
@@ -298,12 +307,12 @@ fn print_commands(game_state: &GameState) {
         let desc = get_command_description(command);
         println!("   {}: {}", input, desc);
     }
-    println!();
-    for &command in &sys_cmds {
-        let input = get_command_input(command);
-        let desc = get_command_description(command);
-        println!("   {}: {}", input, desc);
-    }
+    // println!();
+    // for &command in &sys_cmds {
+    //     let input = get_command_input(command);
+    //     let desc = get_command_description(command);
+    //     println!("   {}: {}", input, desc);
+    // }
 }
 
 fn read_line() -> String {
@@ -319,16 +328,10 @@ fn read_line() -> String {
 
 fn print_event(event: Event) -> String {
     match event {
-        Event::BalanceChanged {
-            from: _,
-            to: balance,
-        } => format!("You have ${}", balance),
+        Event::BalanceChanged { to: balance } => format!("You have ${}", balance),
         Event::DayChanged { to: day } => format!("It is Day {}", day),
         Event::DrankBeer => "Cheers!".to_owned(),
-        Event::LocationChanged {
-            from: _,
-            to: location,
-        } => print_location(location),
+        Event::LocationChanged { to: location } => print_location(location),
         Event::Slept => "Zzzzzzz...".to_owned(),
     }
 }
@@ -337,10 +340,12 @@ fn render(game_state: &GameState, log_start: usize) -> usize {
     let log_len = game_state.event_log.len();
     for i in log_start..log_len {
         let e = game_state.event_log[i];
-        println!("{}", print_event(e));
+        let styled = print_event(e).bold().green();
+        println!("{}", styled);
     }
 
     if game_state.show_help {
+        println!();
         print_commands(&game_state);
     }
 
