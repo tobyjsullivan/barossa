@@ -2,10 +2,11 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct GameState {
     day: u8,
     player_state: PlayerState,
+    event_log: Vec<Event>,
     show_help: bool,
     done: bool,
 }
@@ -15,6 +16,7 @@ impl GameState {
         Self {
             day: 1,
             player_state,
+            event_log: Vec::new(),
             show_help: true,
             done: false,
         }
@@ -43,24 +45,51 @@ impl GameState {
     fn apply_player_action(mut self, action: PlayerAction) -> Self {
         match action {
             PlayerAction::BuyDrink { cost } => {
-                self.player_state.balance -= cost;
-                println!("Cheers!");
+                self.change_balance(0 - cost);
+                self.drink_beer();
                 self
             }
             PlayerAction::Go { destination } => {
-                self.player_state.location = destination;
+                self.change_location(destination);
                 self
             }
             PlayerAction::Sleep { cost } => {
                 if let Some(cost) = cost {
-                    self.player_state.balance -= cost;
+                    self.change_balance(0 - cost);
                 }
-                println!("Zzzzzzz...");
-                self.day += 1;
+                self.sleep();
+                self.change_day(1);
 
                 self
             }
         }
+    }
+
+    fn change_balance(&mut self, delta: i64) {
+        let from = self.player_state.balance;
+        let to = from + delta;
+        self.player_state.balance = to;
+        self.event_log.push(Event::BalanceChanged { from, to });
+    }
+
+    fn change_location(&mut self, to: Location) {
+        let from = self.player_state.location;
+        self.player_state.location = to;
+        self.event_log.push(Event::LocationChanged { from, to });
+    }
+
+    fn drink_beer(&mut self) {
+        self.event_log.push(Event::DrankBeer);
+    }
+
+    fn sleep(&mut self) {
+        self.event_log.push(Event::Slept);
+    }
+
+    fn change_day(&mut self, delta: u8) {
+        let to = self.day + delta;
+        self.day = to;
+        self.event_log.push(Event::DayChanged { to });
     }
 
     fn available_commands(&self) -> Vec<Command> {
@@ -89,7 +118,7 @@ impl GameState {
 
 #[derive(Clone, Copy)]
 struct PlayerState {
-    balance: u64,
+    balance: i64,
     location: Location,
 }
 
@@ -133,6 +162,15 @@ impl Turn {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Event {
+    Slept,
+    DayChanged { to: u8 },
+    DrankBeer,
+    LocationChanged { from: Location, to: Location },
+    BalanceChanged { from: i64, to: i64 },
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Location {
     TenundaHotel,
@@ -155,34 +193,16 @@ enum SystemAction {
 
 #[derive(Clone, Copy, PartialEq)]
 enum PlayerAction {
-    BuyDrink { cost: u64 },
+    BuyDrink { cost: i64 },
     Go { destination: Location },
-    Sleep { cost: Option<u64> },
+    Sleep { cost: Option<i64> },
 }
 
-fn print_summary(state: &GameState) {
-    println!("****************");
-    print_day(state);
-    print_finances(&state.player_state);
-    print_location(&state.player_state);
-
-    println!();
-}
-
-fn print_day(state: &GameState) {
-    println!("It is Day {}", state.day);
-}
-
-fn print_finances(state: &PlayerState) {
-    println!("You have ${}", state.balance);
-}
-
-fn print_location(state: &PlayerState) {
-    let out = match state.location {
+fn print_location(location: Location) -> String {
+    match location {
         Location::TenundaHotel => format!("You are at the Tenunda Hotel."),
         Location::TenundaStreets => format!("You are on the streets of Tenunda"),
-    };
-    println!("{}", out);
+    }
 }
 
 fn get_command_input(command: Command) -> &'static str {
@@ -192,7 +212,7 @@ fn get_command_input(command: Command) -> &'static str {
         } => "x",
         Command::System {
             action: SystemAction::Help,
-        } => "help",
+        } => "?",
         Command::Player {
             action: PlayerAction::BuyDrink { cost: _ },
         } => "b",
@@ -297,11 +317,34 @@ fn read_line() -> String {
     String::from(command)
 }
 
-fn render(game_state: &GameState) {
-    print_summary(&game_state);
+fn print_event(event: Event) -> String {
+    match event {
+        Event::BalanceChanged {
+            from: _,
+            to: balance,
+        } => format!("You have ${}", balance),
+        Event::DayChanged { to: day } => format!("It is Day {}", day),
+        Event::DrankBeer => "Cheers!".to_owned(),
+        Event::LocationChanged {
+            from: _,
+            to: location,
+        } => print_location(location),
+        Event::Slept => "Zzzzzzz...".to_owned(),
+    }
+}
+
+fn render(game_state: &GameState, log_start: usize) -> usize {
+    let log_len = game_state.event_log.len();
+    for i in log_start..log_len {
+        let e = game_state.event_log[i];
+        println!("{}", print_event(e));
+    }
+
     if game_state.show_help {
         print_commands(&game_state);
     }
+
+    log_len
 }
 
 fn capture(game_state: &GameState) -> Command {
@@ -332,8 +375,9 @@ fn main() {
     let player_state = PlayerState::new();
     let mut game_state = GameState::new(player_state);
 
+    let mut log_pos = 0;
     loop {
-        render(&game_state);
+        log_pos = render(&game_state, log_pos);
         let cmd = capture(&game_state);
         let turn = Turn::new(cmd);
         game_state = game_state.apply_turn(turn);
