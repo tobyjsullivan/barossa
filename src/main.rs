@@ -66,22 +66,22 @@ impl GameState {
         }
     }
 
-    fn apply_player_action(mut self, action: PlayerAction) -> Self {
+    fn apply_player_action(mut self, action: GameAction) -> Self {
         match action {
-            PlayerAction::ApplyForJob { employer } => {
+            GameAction::ApplyForJob { employer } => {
                 self.apply_for_job(employer);
                 self
             }
-            PlayerAction::BuyBeer { cost } => {
+            GameAction::BuyBeer { cost } => {
                 self.drink_beer();
                 self.change_balance(0 - cost);
                 self
             }
-            PlayerAction::Go { destination } => {
+            GameAction::Go { destination } => {
                 self.change_location(destination);
                 self
             }
-            PlayerAction::Sleep { cost } => {
+            GameAction::Sleep { cost } => {
                 self.sleep();
                 self.change_day(1);
                 if let Some(cost) = cost {
@@ -90,7 +90,7 @@ impl GameState {
 
                 self
             }
-            PlayerAction::Work => {
+            GameAction::Work => {
                 self.work();
                 self
             }
@@ -224,7 +224,7 @@ enum Location {
 }
 
 impl Location {
-    fn available_actions(&self, game_state: &GameState) -> Vec<PlayerAction> {
+    fn available_actions(&self, game_state: &GameState) -> Vec<GameAction> {
         let mut out = Vec::new();
 
         let mut employed_here = false;
@@ -232,7 +232,7 @@ impl Location {
             if job.business.location == *self {
                 employed_here = true;
                 if job.next_work_day == game_state.day {
-                    out.push(PlayerAction::Work);
+                    out.push(GameAction::Work);
                 }
             }
         }
@@ -240,29 +240,29 @@ impl Location {
         match self {
             Location::TenundaBrewery => {
                 out.append(&mut vec![
-                    PlayerAction::BuyBeer { cost: 6 },
-                    PlayerAction::Go {
+                    GameAction::BuyBeer { cost: 6 },
+                    GameAction::Go {
                         destination: Location::TenundaStreets,
                     },
                 ]);
                 if !employed_here {
-                    out.push(PlayerAction::ApplyForJob {
+                    out.push(GameAction::ApplyForJob {
                         employer: TENUNDA_BREWING,
                     });
                 }
             }
             Location::TenundaHotel => out.append(&mut vec![
-                PlayerAction::BuyBeer { cost: 10 },
-                PlayerAction::Go {
+                GameAction::BuyBeer { cost: 10 },
+                GameAction::Go {
                     destination: Location::TenundaStreets,
                 },
-                PlayerAction::Sleep { cost: Some(120) },
+                GameAction::Sleep { cost: Some(120) },
             ]),
             Location::TenundaStreets => out.append(&mut vec![
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaBrewery,
                 },
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaHotel,
                 },
             ]),
@@ -288,7 +288,7 @@ const TENUNDA_BREWING: Business = Business {
 #[derive(Clone, Copy)]
 enum Command {
     System { action: SystemAction },
-    Player { action: PlayerAction },
+    Player { action: GameAction },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -298,7 +298,7 @@ enum SystemAction {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum PlayerAction {
+enum GameAction {
     ApplyForJob { employer: Business },
     BuyBeer { cost: i64 },
     Go { destination: Location },
@@ -330,34 +330,34 @@ fn print_location(location: Location) -> String {
 fn get_command_input(command: Command) -> &'static str {
     match command {
         Command::Player {
-            action: PlayerAction::ApplyForJob { employer: _ },
+            action: GameAction::ApplyForJob { employer: _ },
         } => "j",
         Command::Player {
-            action: PlayerAction::BuyBeer { cost: _ },
+            action: GameAction::BuyBeer { cost: _ },
         } => "b",
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaBrewery,
                 },
         } => "b",
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaHotel,
                 },
         } => "h",
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaStreets,
                 },
         } => "o",
         Command::Player {
-            action: PlayerAction::Sleep { cost: _ },
+            action: GameAction::Sleep { cost: _ },
         } => "s",
         Command::Player {
-            action: PlayerAction::Work,
+            action: GameAction::Work,
         } => "w",
         Command::System {
             action: SystemAction::Exit,
@@ -371,37 +371,37 @@ fn get_command_input(command: Command) -> &'static str {
 fn get_command_description(command: Command) -> String {
     match command {
         Command::Player {
-            action: PlayerAction::ApplyForJob { employer: _ },
+            action: GameAction::ApplyForJob { employer: _ },
         } => "Apply for a job.".to_owned(),
         Command::Player {
-            action: PlayerAction::BuyBeer { cost },
+            action: GameAction::BuyBeer { cost },
         } => format!("Buy a beer. (${})", cost),
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaBrewery,
                 },
         } => "Go to the brewery.".to_owned(),
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaHotel,
                 },
         } => "Go to the hotel.".to_owned(),
         Command::Player {
             action:
-                PlayerAction::Go {
+                GameAction::Go {
                     destination: Location::TenundaStreets,
                 },
         } => "Go outside.".to_owned(),
         Command::Player {
-            action: PlayerAction::Sleep { cost: Some(cost) },
+            action: GameAction::Sleep { cost: Some(cost) },
         } => format!("Sleep. (${})", cost),
         Command::Player {
-            action: PlayerAction::Sleep { cost: None },
+            action: GameAction::Sleep { cost: None },
         } => "Sleep.".to_owned(),
         Command::Player {
-            action: PlayerAction::Work,
+            action: GameAction::Work,
         } => "Work.".to_owned(),
 
         Command::System {
