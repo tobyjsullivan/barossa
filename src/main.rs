@@ -6,321 +6,46 @@ extern crate colored;
 
 use colored::*;
 
-struct GameState {
-    day: u8,
-    player_state: PlayerState,
-    event_log: Vec<Event>,
-}
+mod action;
+mod business;
+mod location;
+mod state;
 
-impl GameState {
-    fn new(player_state: PlayerState) -> Self {
-        let initial_log = vec![
-            Event::DayChanged { to: 1 },
-            Event::BalanceChanged {
-                to: player_state.balance,
-            },
-            Event::LocationChanged {
-                to: player_state.location,
-            },
-        ];
-
-        Self {
-            day: 1,
-            event_log: initial_log,
-            player_state,
-        }
-    }
-
-    fn apply_turn(mut self, turn: Turn) -> Self {
-        let mut hire = Vec::new();
-        for i in 0..self.player_state.job_applications.len() {
-            if self.day > self.player_state.job_applications[i].application_day {
-                hire.push(self.player_state.job_applications[i]);
-            }
-        }
-        for &job_app in &hire {
-            self.player_state.job_applications.retain(|a| *a != job_app);
-            self.hire_for_job(job_app);
-        }
-
-        self.apply_player_action(turn.action)
-    }
-
-    fn apply_player_action(mut self, action: GameAction) -> Self {
-        match action {
-            GameAction::ApplyForJob { employer, position } => {
-                self.apply_for_job(employer, position);
-                self
-            }
-            GameAction::BuyBeer { cost } => {
-                self.drink_beer();
-                self.change_balance(0 - cost);
-                self
-            }
-            GameAction::Go { destination } => {
-                self.change_location(destination);
-                self
-            }
-            GameAction::Sleep { cost } => {
-                self.sleep();
-                self.change_day(1);
-                if let Some(cost) = cost {
-                    self.change_balance(0 - cost);
-                }
-
-                self
-            }
-            GameAction::Work => {
-                self.work();
-                self
-            }
-        }
-    }
-
-    fn apply_for_job(&mut self, employer: Business, position: Position) {
-        self.player_state.job_applications.push(JobApplication {
-            application_day: self.day,
-            business: employer,
-            position,
-        });
-        self.event_log.push(Event::AppliedForJob { employer });
-    }
-
-    fn change_balance(&mut self, delta: i64) {
-        let to = self.player_state.balance + delta;
-        self.player_state.balance = to;
-        self.event_log.push(Event::BalanceChanged { to });
-    }
-
-    fn change_day(&mut self, delta: u8) {
-        let to = self.day + delta;
-        self.day = to;
-        self.event_log.push(Event::DayChanged { to });
-    }
-
-    fn change_location(&mut self, to: Location) {
-        self.player_state.location = to;
-        self.event_log.push(Event::LocationChanged { to });
-    }
-
-    fn drink_beer(&mut self) {
-        self.event_log.push(Event::DrankBeer);
-    }
-
-    fn hire_for_job(&mut self, application: JobApplication) {
-        let job = Job {
-            business: application.business,
-            next_work_day: self.day + 1,
-            pay: 200,
-            position: application.position,
-        };
-        self.player_state.job = Some(job);
-        self.event_log.push(Event::Hired { job });
-    }
-
-    fn sleep(&mut self) {
-        self.event_log.push(Event::Slept);
-    }
-
-    fn work(&mut self) {
-        let mut pay = None;
-        if let Some(mut job) = self.player_state.job.as_mut() {
-            pay = Some(job.pay);
-            job.next_work_day = self.day + 1;
-            self.event_log.push(Event::Worked { job: *job });
-        }
-        if let Some(pay) = pay {
-            self.change_balance(pay as i64);
-        }
-    }
-
-    fn available_commands(&self) -> Vec<Command> {
-        let mut out = Vec::new();
-        let sys_actions = self.available_system_actions();
-        for i in 0..sys_actions.len() {
-            out.push(Command::System {
-                action: sys_actions[i],
-            });
-        }
-
-        let game_actions = self.player_state.location.available_actions(&self);
-        for i in 0..game_actions.len() {
-            out.push(Command::Game {
-                action: game_actions[i],
-            });
-        }
-
-        out
-    }
-
-    fn available_system_actions(&self) -> Vec<SystemAction> {
-        vec![SystemAction::Exit]
-    }
-}
-
-struct PlayerState {
-    balance: i64,
-    location: Location,
-    job: Option<Job>,
-    job_applications: Vec<JobApplication>,
-}
-
-impl PlayerState {
-    fn new() -> Self {
-        PlayerState {
-            balance: 1000,
-            location: Location::TenundaHotel,
-            job: None,
-            job_applications: Vec::new(),
-        }
-    }
-}
-
-struct Turn {
-    action: GameAction,
-}
-
-impl Turn {
-    fn new(action: GameAction) -> Self {
-        Self { action }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Event {
-    AppliedForJob { employer: Business },
-    BalanceChanged { to: i64 },
-    DayChanged { to: u8 },
-    DrankBeer,
-    Hired { job: Job },
-    LocationChanged { to: Location },
-    Slept,
-    Worked { job: Job },
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Location {
-    TenundaBrewery,
-    TenundaHotel,
-    TenundaStreets,
-}
-
-impl Location {
-    fn available_actions(&self, game_state: &GameState) -> Vec<GameAction> {
-        let mut out = Vec::new();
-
-        let mut employed_here = false;
-        if let Some(job) = game_state.player_state.job {
-            if job.business.location == *self {
-                employed_here = true;
-                if job.next_work_day == game_state.day {
-                    out.push(GameAction::Work);
-                }
-            }
-        }
-
-        match self {
-            Location::TenundaBrewery => {
-                out.append(&mut vec![
-                    GameAction::BuyBeer { cost: 6 },
-                    GameAction::Go {
-                        destination: Location::TenundaStreets,
-                    },
-                ]);
-                if !employed_here {
-                    out.push(GameAction::ApplyForJob {
-                        employer: TENUNDA_BREWING,
-                        position: Position::Server,
-                    });
-                }
-            }
-            Location::TenundaHotel => out.append(&mut vec![
-                GameAction::BuyBeer { cost: 10 },
-                GameAction::Go {
-                    destination: Location::TenundaStreets,
-                },
-                GameAction::Sleep { cost: Some(120) },
-            ]),
-            Location::TenundaStreets => out.append(&mut vec![
-                GameAction::Go {
-                    destination: Location::TenundaBrewery,
-                },
-                GameAction::Go {
-                    destination: Location::TenundaHotel,
-                },
-            ]),
-        }
-
-        out
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-struct Business {
-    name: &'static str,
-    location: Location,
-}
-
-const TENUNDA_BREWING: Business = Business {
-    name: "Tenunda Brewing",
-    location: Location::TenundaBrewery,
-};
-
-/// A list of all possible input commands.
-/// Intended to decouple CLI inputs from actual command handling.
-#[derive(Clone, Copy)]
-enum Command {
-    System { action: SystemAction },
-    Game { action: GameAction },
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum SystemAction {
-    Exit,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum GameAction {
-    ApplyForJob {
-        employer: Business,
-        position: Position,
-    },
-    BuyBeer {
-        cost: i64,
-    },
-    Go {
-        destination: Location,
-    },
-    Sleep {
-        cost: Option<i64>,
-    },
-    Work,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-struct JobApplication {
-    business: Business,
-    application_day: u8,
-    position: Position,
-}
-
-#[derive(Clone, Copy)]
-struct Job {
-    business: Business,
-    position: Position,
-    next_work_day: u8,
-    pay: u64,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Position {
-    Server,
-}
+use action::{Event, GameAction, Turn};
+use business::Position;
+use location::Location;
+use state::GameState;
 
 fn format_position(position: Position) -> &'static str {
     match position {
         Position::Server => "Server",
     }
+}
+
+fn available_commands(game_state: &GameState) -> Vec<Command> {
+    let mut out = Vec::new();
+    let sys_actions = available_system_actions();
+    for i in 0..sys_actions.len() {
+        out.push(Command::System {
+            action: sys_actions[i],
+        });
+    }
+
+    let game_actions = game_state
+        .player_state
+        .location
+        .available_actions(&game_state);
+    for i in 0..game_actions.len() {
+        out.push(Command::Game {
+            action: game_actions[i],
+        });
+    }
+
+    out
+}
+
+fn available_system_actions() -> Vec<SystemAction> {
+    vec![SystemAction::Exit]
 }
 
 fn get_command_input(command: Command) -> &'static str {
@@ -412,7 +137,7 @@ fn get_command_description(command: Command) -> String {
 }
 
 fn print_commands(game_state: &GameState) {
-    let mut commands = game_state.available_commands();
+    let mut commands = available_commands(game_state);
     if commands.len() == 0 {
         println!("No actions currently available.");
         return;
@@ -493,8 +218,19 @@ fn render(game_state: &GameState, log_start: usize) -> usize {
     log_len
 }
 
+#[derive(Clone, Copy)]
+enum Command {
+    System { action: SystemAction },
+    Game { action: GameAction },
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SystemAction {
+    Exit,
+}
+
 fn capture(game_state: &GameState) -> Command {
-    let commands = game_state.available_commands();
+    let commands = available_commands(game_state);
     let mut cmd_map = HashMap::new();
     for &command in &commands {
         let command_input = get_command_input(command);
@@ -518,8 +254,7 @@ fn capture(game_state: &GameState) -> Command {
 }
 
 fn main() {
-    let player_state = PlayerState::new();
-    let mut game_state = GameState::new(player_state);
+    let mut game_state = GameState::new();
 
     let mut log_pos = 0;
     loop {
@@ -527,7 +262,7 @@ fn main() {
         let cmd = capture(&game_state);
         match cmd {
             Command::Game { action } => {
-                let turn = Turn::new(action);
+                let turn = Turn { action };
                 game_state = game_state.apply_turn(turn);
             }
             Command::System {
