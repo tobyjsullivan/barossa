@@ -10,8 +10,6 @@ struct GameState {
     day: u8,
     player_state: PlayerState,
     event_log: Vec<Event>,
-    show_help: bool,
-    done: bool,
 }
 
 impl GameState {
@@ -30,8 +28,6 @@ impl GameState {
             day: 1,
             event_log: initial_log,
             player_state,
-            show_help: true,
-            done: false,
         }
     }
 
@@ -47,23 +43,7 @@ impl GameState {
             self.hire_for_job(job_app);
         }
 
-        match turn.command {
-            Command::System { action } => self.apply_system_action(action),
-            Command::Game { action } => self.apply_player_action(action),
-        }
-    }
-
-    fn apply_system_action(mut self, action: SystemAction) -> Self {
-        match action {
-            SystemAction::Exit => {
-                self.done = true;
-                self
-            }
-            SystemAction::Help => {
-                self.show_help = !self.show_help;
-                self
-            }
-        }
+        self.apply_player_action(turn.action)
     }
 
     fn apply_player_action(mut self, action: GameAction) -> Self {
@@ -172,7 +152,7 @@ impl GameState {
     }
 
     fn available_system_actions(&self) -> Vec<SystemAction> {
-        vec![SystemAction::Exit, SystemAction::Help]
+        vec![SystemAction::Exit]
     }
 }
 
@@ -195,12 +175,12 @@ impl PlayerState {
 }
 
 struct Turn {
-    command: Command,
+    action: GameAction,
 }
 
 impl Turn {
-    fn new(command: Command) -> Self {
-        Self { command }
+    fn new(action: GameAction) -> Self {
+        Self { action }
     }
 }
 
@@ -294,7 +274,6 @@ enum Command {
 #[derive(Clone, Copy, PartialEq)]
 enum SystemAction {
     Exit,
-    Help,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -331,7 +310,7 @@ fn get_command_input(command: Command) -> &'static str {
     match command {
         Command::Game {
             action: GameAction::ApplyForJob { employer: _ },
-        } => "j",
+        } => "a",
         Command::Game {
             action: GameAction::BuyBeer { cost: _ },
         } => "b",
@@ -362,9 +341,6 @@ fn get_command_input(command: Command) -> &'static str {
         Command::System {
             action: SystemAction::Exit,
         } => "q",
-        Command::System {
-            action: SystemAction::Help,
-        } => "?",
     }
 }
 
@@ -407,9 +383,6 @@ fn get_command_description(command: Command) -> String {
         Command::System {
             action: SystemAction::Exit,
         } => "Exit.".to_owned(),
-        Command::System {
-            action: SystemAction::Help,
-        } => "Show/hide this help.".to_owned(),
     }
 }
 
@@ -489,10 +462,7 @@ fn render(game_state: &GameState, log_start: usize) -> usize {
         println!("{}", styled);
     }
 
-    if game_state.show_help {
-        println!();
-        print_commands(&game_state);
-    }
+    print_commands(&game_state);
 
     log_len
 }
@@ -529,11 +499,14 @@ fn main() {
     loop {
         log_pos = render(&game_state, log_pos);
         let cmd = capture(&game_state);
-        let turn = Turn::new(cmd);
-        game_state = game_state.apply_turn(turn);
-
-        if game_state.done {
-            break;
+        match cmd {
+            Command::Game { action } => {
+                let turn = Turn::new(action);
+                game_state = game_state.apply_turn(turn);
+            }
+            Command::System {
+                action: SystemAction::Exit,
+            } => break,
         }
     }
 
