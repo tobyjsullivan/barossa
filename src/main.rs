@@ -6,7 +6,6 @@ extern crate colored;
 
 use colored::*;
 
-#[derive(Clone)]
 struct GameState {
     day: u8,
     player_state: PlayerState,
@@ -17,24 +16,37 @@ struct GameState {
 
 impl GameState {
     fn new(player_state: PlayerState) -> Self {
+        let initial_log = vec![
+            Event::DayChanged { to: 1 },
+            Event::BalanceChanged {
+                to: player_state.balance,
+            },
+            Event::LocationChanged {
+                to: player_state.location,
+            },
+        ];
+
         Self {
             day: 1,
+            event_log: initial_log,
             player_state,
-            event_log: vec![
-                Event::DayChanged { to: 1 },
-                Event::BalanceChanged {
-                    to: player_state.balance,
-                },
-                Event::LocationChanged {
-                    to: player_state.location,
-                },
-            ],
             show_help: true,
             done: false,
         }
     }
 
-    fn apply_turn(self, turn: Turn) -> Self {
+    fn apply_turn(mut self, turn: Turn) -> Self {
+        let mut hire = Vec::new();
+        for i in 0..self.player_state.job_applications.len() {
+            if self.day > self.player_state.job_applications[i].application_day {
+                hire.push(self.player_state.job_applications[i]);
+            }
+        }
+        for &job_app in &hire {
+            self.player_state.job_applications.retain(|a| *a != job_app);
+            self.hire_for_job(job_app);
+        }
+
         match turn.command {
             Command::System { action } => self.apply_system_action(action),
             Command::Player { action } => self.apply_player_action(action),
@@ -56,7 +68,11 @@ impl GameState {
 
     fn apply_player_action(mut self, action: PlayerAction) -> Self {
         match action {
-            PlayerAction::BuyDrink { cost } => {
+            PlayerAction::ApplyForJob { employer } => {
+                self.apply_for_job(employer);
+                self
+            }
+            PlayerAction::BuyBeer { cost } => {
                 self.drink_beer();
                 self.change_balance(0 - cost);
                 self
@@ -74,13 +90,31 @@ impl GameState {
 
                 self
             }
+            PlayerAction::Work => {
+                self.work();
+                self
+            }
         }
+    }
+
+    fn apply_for_job(&mut self, employer: Business) {
+        self.player_state.job_applications.push(JobApplication {
+            application_day: self.day,
+            business: employer,
+        });
+        self.event_log.push(Event::AppliedForJob { employer });
     }
 
     fn change_balance(&mut self, delta: i64) {
         let to = self.player_state.balance + delta;
         self.player_state.balance = to;
         self.event_log.push(Event::BalanceChanged { to });
+    }
+
+    fn change_day(&mut self, delta: u8) {
+        let to = self.day + delta;
+        self.day = to;
+        self.event_log.push(Event::DayChanged { to });
     }
 
     fn change_location(&mut self, to: Location) {
@@ -92,14 +126,30 @@ impl GameState {
         self.event_log.push(Event::DrankBeer);
     }
 
+    fn hire_for_job(&mut self, application: JobApplication) {
+        let job = Job {
+            business: application.business,
+            next_work_day: self.day + 1,
+            pay: 200,
+        };
+        self.player_state.job = Some(job);
+        self.event_log.push(Event::Hired { job });
+    }
+
     fn sleep(&mut self) {
         self.event_log.push(Event::Slept);
     }
 
-    fn change_day(&mut self, delta: u8) {
-        let to = self.day + delta;
-        self.day = to;
-        self.event_log.push(Event::DayChanged { to });
+    fn work(&mut self) {
+        let mut pay = None;
+        if let Some(mut job) = self.player_state.job.as_mut() {
+            pay = Some(job.pay);
+            job.next_work_day = self.day + 1;
+            self.event_log.push(Event::Worked { job: *job });
+        }
+        if let Some(pay) = pay {
+            self.change_balance(pay as i64);
+        }
     }
 
     fn available_commands(&self) -> Vec<Command> {
@@ -111,7 +161,7 @@ impl GameState {
             });
         }
 
-        let player_actions = self.player_state.available_actions();
+        let player_actions = self.player_state.location.available_actions(&self);
         for i in 0..player_actions.len() {
             out.push(Command::Player {
                 action: player_actions[i],
@@ -126,10 +176,11 @@ impl GameState {
     }
 }
 
-#[derive(Clone, Copy)]
 struct PlayerState {
     balance: i64,
     location: Location,
+    job: Option<Job>,
+    job_applications: Vec<JobApplication>,
 }
 
 impl PlayerState {
@@ -137,11 +188,9 @@ impl PlayerState {
         PlayerState {
             balance: 1000,
             location: Location::TenundaHotel,
+            job: None,
+            job_applications: Vec::new(),
         }
-    }
-
-    fn available_actions(&self) -> Vec<PlayerAction> {
-        self.location.available_actions()
     }
 }
 
@@ -157,35 +206,82 @@ impl Turn {
 
 #[derive(Clone, Copy)]
 enum Event {
-    Slept,
+    AppliedForJob { employer: Business },
+    BalanceChanged { to: i64 },
     DayChanged { to: u8 },
     DrankBeer,
+    Hired { job: Job },
     LocationChanged { to: Location },
-    BalanceChanged { to: i64 },
+    Slept,
+    Worked { job: Job },
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Location {
+    TenundaBrewery,
     TenundaHotel,
     TenundaStreets,
 }
 
 impl Location {
-    fn available_actions(&self) -> Vec<PlayerAction> {
+    fn available_actions(&self, game_state: &GameState) -> Vec<PlayerAction> {
+        let mut out = Vec::new();
+
+        let mut employed_here = false;
+        if let Some(job) = game_state.player_state.job {
+            if job.business.location == *self {
+                employed_here = true;
+                if job.next_work_day == game_state.day {
+                    out.push(PlayerAction::Work);
+                }
+            }
+        }
+
         match self {
-            Location::TenundaHotel => vec![
+            Location::TenundaBrewery => {
+                out.append(&mut vec![
+                    PlayerAction::BuyBeer { cost: 6 },
+                    PlayerAction::Go {
+                        destination: Location::TenundaStreets,
+                    },
+                ]);
+                if !employed_here {
+                    out.push(PlayerAction::ApplyForJob {
+                        employer: TENUNDA_BREWING,
+                    });
+                }
+            }
+            Location::TenundaHotel => out.append(&mut vec![
+                PlayerAction::BuyBeer { cost: 10 },
                 PlayerAction::Go {
                     destination: Location::TenundaStreets,
                 },
-                PlayerAction::Sleep { cost: Some(150) },
-                PlayerAction::BuyDrink { cost: 10 },
-            ],
-            Location::TenundaStreets => vec![PlayerAction::Go {
-                destination: Location::TenundaHotel,
-            }],
+                PlayerAction::Sleep { cost: Some(120) },
+            ]),
+            Location::TenundaStreets => out.append(&mut vec![
+                PlayerAction::Go {
+                    destination: Location::TenundaBrewery,
+                },
+                PlayerAction::Go {
+                    destination: Location::TenundaHotel,
+                },
+            ]),
         }
+
+        out
     }
 }
+
+#[derive(Clone, Copy, PartialEq)]
+struct Business {
+    name: &'static str,
+    location: Location,
+}
+
+const TENUNDA_BREWING: Business = Business {
+    name: "Tenunda Brewing",
+    location: Location::TenundaBrewery,
+};
 
 /// A list of all possible input commands.
 /// Intended to decouple CLI inputs from actual command handling.
@@ -203,13 +299,29 @@ enum SystemAction {
 
 #[derive(Clone, Copy, PartialEq)]
 enum PlayerAction {
-    BuyDrink { cost: i64 },
+    ApplyForJob { employer: Business },
+    BuyBeer { cost: i64 },
     Go { destination: Location },
     Sleep { cost: Option<i64> },
+    Work,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct JobApplication {
+    business: Business,
+    application_day: u8,
+}
+
+#[derive(Clone, Copy)]
+struct Job {
+    business: Business,
+    next_work_day: u8,
+    pay: u64,
 }
 
 fn print_location(location: Location) -> String {
     match location {
+        Location::TenundaBrewery => format!("You are at the Tenunda Brewery."),
         Location::TenundaHotel => format!("You are at the Tenunda Hotel."),
         Location::TenundaStreets => format!("You are on the streets of Tenunda"),
     }
@@ -217,21 +329,18 @@ fn print_location(location: Location) -> String {
 
 fn get_command_input(command: Command) -> &'static str {
     match command {
-        Command::System {
-            action: SystemAction::Exit,
-        } => "q",
-        Command::System {
-            action: SystemAction::Help,
-        } => "?",
         Command::Player {
-            action: PlayerAction::BuyDrink { cost: _ },
+            action: PlayerAction::ApplyForJob { employer: _ },
+        } => "j",
+        Command::Player {
+            action: PlayerAction::BuyBeer { cost: _ },
         } => "b",
         Command::Player {
             action:
                 PlayerAction::Go {
-                    destination: Location::TenundaStreets,
+                    destination: Location::TenundaBrewery,
                 },
-        } => "o",
+        } => "b",
         Command::Player {
             action:
                 PlayerAction::Go {
@@ -239,23 +348,46 @@ fn get_command_input(command: Command) -> &'static str {
                 },
         } => "h",
         Command::Player {
+            action:
+                PlayerAction::Go {
+                    destination: Location::TenundaStreets,
+                },
+        } => "o",
+        Command::Player {
             action: PlayerAction::Sleep { cost: _ },
         } => "s",
+        Command::Player {
+            action: PlayerAction::Work,
+        } => "w",
+        Command::System {
+            action: SystemAction::Exit,
+        } => "q",
+        Command::System {
+            action: SystemAction::Help,
+        } => "?",
     }
 }
 
 fn get_command_description(command: Command) -> String {
     match command {
-        Command::System {
-            action: SystemAction::Exit,
-        } => "Exit.".to_owned(),
-        Command::System {
-            action: SystemAction::Help,
-        } => "Show/hide this help.".to_owned(),
-
         Command::Player {
-            action: PlayerAction::BuyDrink { cost },
+            action: PlayerAction::ApplyForJob { employer: _ },
+        } => "Apply for a job.".to_owned(),
+        Command::Player {
+            action: PlayerAction::BuyBeer { cost },
         } => format!("Buy a beer. (${})", cost),
+        Command::Player {
+            action:
+                PlayerAction::Go {
+                    destination: Location::TenundaBrewery,
+                },
+        } => "Go to the brewery.".to_owned(),
+        Command::Player {
+            action:
+                PlayerAction::Go {
+                    destination: Location::TenundaHotel,
+                },
+        } => "Go to the hotel.".to_owned(),
         Command::Player {
             action:
                 PlayerAction::Go {
@@ -263,17 +395,21 @@ fn get_command_description(command: Command) -> String {
                 },
         } => "Go outside.".to_owned(),
         Command::Player {
-            action:
-                PlayerAction::Go {
-                    destination: Location::TenundaHotel,
-                },
-        } => "Go into the hotel.".to_owned(),
-        Command::Player {
             action: PlayerAction::Sleep { cost: Some(cost) },
         } => format!("Sleep. (${})", cost),
         Command::Player {
             action: PlayerAction::Sleep { cost: None },
         } => "Sleep.".to_owned(),
+        Command::Player {
+            action: PlayerAction::Work,
+        } => "Work.".to_owned(),
+
+        Command::System {
+            action: SystemAction::Exit,
+        } => "Exit.".to_owned(),
+        Command::System {
+            action: SystemAction::Help,
+        } => "Show/hide this help.".to_owned(),
     }
 }
 
@@ -328,11 +464,20 @@ fn read_line() -> String {
 
 fn print_event(event: Event) -> String {
     match event {
+        Event::AppliedForJob { employer: _ } => format!("\"We'll call you.\""),
         Event::BalanceChanged { to: balance } => format!("You have ${}", balance),
         Event::DayChanged { to: day } => format!("It is Day {}", day),
         Event::DrankBeer => "Cheers!".to_owned(),
+        Event::Hired { job } => format!(
+            "Congrats! You got the job at {}. You start on Day {}.",
+            job.business.name, job.next_work_day
+        ),
         Event::LocationChanged { to: location } => print_location(location),
         Event::Slept => "Zzzzzzz...".to_owned(),
+        Event::Worked { job } => format!(
+            "You worked a shift at {}. You're next shift is Day {}.",
+            job.business.name, job.next_work_day
+        ),
     }
 }
 
