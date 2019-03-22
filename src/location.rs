@@ -25,9 +25,9 @@ impl Location {
 
         let mut applied_here = false;
         for &job_app in &game_state.player_state.job_applications {
-          if job_app.business.location == *self {
-            applied_here = true;
-          }
+            if job_app.business.location == *self {
+                applied_here = true;
+            }
         }
 
         match self {
