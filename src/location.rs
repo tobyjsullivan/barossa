@@ -23,6 +23,13 @@ impl Location {
             }
         }
 
+        let mut applied_here = false;
+        for &job_app in &game_state.player_state.job_applications {
+          if job_app.business.location == *self {
+            applied_here = true;
+          }
+        }
+
         match self {
             Location::TenundaBrewery => {
                 out.append(&mut vec![
@@ -31,7 +38,7 @@ impl Location {
                         destination: Location::TenundaStreets,
                     },
                 ]);
-                if !employed_here {
+                if !employed_here && !applied_here {
                     out.push(GameAction::ApplyForJob {
                         employer: TENUNDA_BREWING,
                         position: Position::Server,
