@@ -1,4 +1,4 @@
-use crate::business::{Business, Job, JobApplication, Position};
+use crate::business::{Business, Job, Position};
 use crate::location::Location;
 
 #[derive(Clone, Copy, PartialEq)]
