@@ -141,24 +141,7 @@ impl PlayerState {
     }
 
     fn available_actions(&self) -> Vec<PlayerAction> {
-        let mut out = Vec::new();
-
-        match self.location {
-            Location::TenundaHotel => {
-                out.push(PlayerAction::Go {
-                    destination: Location::TenundaStreets,
-                });
-                out.push(PlayerAction::Sleep { cost: Some(150) });
-                out.push(PlayerAction::BuyDrink { cost: 10 });
-            }
-            Location::TenundaStreets => {
-                out.push(PlayerAction::Go {
-                    destination: Location::TenundaHotel,
-                });
-            }
-        }
-
-        out
+        self.location.available_actions()
     }
 }
 
@@ -185,6 +168,23 @@ enum Event {
 enum Location {
     TenundaHotel,
     TenundaStreets,
+}
+
+impl Location {
+    fn available_actions(&self) -> Vec<PlayerAction> {
+        match self {
+            Location::TenundaHotel => vec![
+                PlayerAction::Go {
+                    destination: Location::TenundaStreets,
+                },
+                PlayerAction::Sleep { cost: Some(150) },
+                PlayerAction::BuyDrink { cost: 10 },
+            ],
+            Location::TenundaStreets => vec![PlayerAction::Go {
+                destination: Location::TenundaHotel,
+            }],
+        }
+    }
 }
 
 /// A list of all possible input commands.
@@ -219,7 +219,7 @@ fn get_command_input(command: Command) -> &'static str {
     match command {
         Command::System {
             action: SystemAction::Exit,
-        } => "x",
+        } => "q",
         Command::System {
             action: SystemAction::Help,
         } => "?",
