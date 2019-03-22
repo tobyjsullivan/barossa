@@ -48,8 +48,8 @@ impl GameState {
 
     fn apply_player_action(mut self, action: GameAction) -> Self {
         match action {
-            GameAction::ApplyForJob { employer } => {
-                self.apply_for_job(employer);
+            GameAction::ApplyForJob { employer, position } => {
+                self.apply_for_job(employer, position);
                 self
             }
             GameAction::BuyBeer { cost } => {
@@ -77,10 +77,11 @@ impl GameState {
         }
     }
 
-    fn apply_for_job(&mut self, employer: Business) {
+    fn apply_for_job(&mut self, employer: Business, position: Position) {
         self.player_state.job_applications.push(JobApplication {
             application_day: self.day,
             business: employer,
+            position,
         });
         self.event_log.push(Event::AppliedForJob { employer });
     }
@@ -111,6 +112,7 @@ impl GameState {
             business: application.business,
             next_work_day: self.day + 1,
             pay: 200,
+            position: application.position,
         };
         self.player_state.job = Some(job);
         self.event_log.push(Event::Hired { job });
@@ -228,6 +230,7 @@ impl Location {
                 if !employed_here {
                     out.push(GameAction::ApplyForJob {
                         employer: TENUNDA_BREWING,
+                        position: Position::Server,
                     });
                 }
             }
@@ -278,10 +281,19 @@ enum SystemAction {
 
 #[derive(Clone, Copy, PartialEq)]
 enum GameAction {
-    ApplyForJob { employer: Business },
-    BuyBeer { cost: i64 },
-    Go { destination: Location },
-    Sleep { cost: Option<i64> },
+    ApplyForJob {
+        employer: Business,
+        position: Position,
+    },
+    BuyBeer {
+        cost: i64,
+    },
+    Go {
+        destination: Location,
+    },
+    Sleep {
+        cost: Option<i64>,
+    },
     Work,
 }
 
@@ -289,27 +301,36 @@ enum GameAction {
 struct JobApplication {
     business: Business,
     application_day: u8,
+    position: Position,
 }
 
 #[derive(Clone, Copy)]
 struct Job {
     business: Business,
+    position: Position,
     next_work_day: u8,
     pay: u64,
 }
 
-fn print_location(location: Location) -> String {
-    match location {
-        Location::TenundaBrewery => format!("You are at the Tenunda Brewery."),
-        Location::TenundaHotel => format!("You are at the Tenunda Hotel."),
-        Location::TenundaStreets => format!("You are on the streets of Tenunda"),
+#[derive(Clone, Copy, PartialEq)]
+enum Position {
+    Server,
+}
+
+fn format_position(position: Position) -> &'static str {
+    match position {
+        Position::Server => "Server",
     }
 }
 
 fn get_command_input(command: Command) -> &'static str {
     match command {
         Command::Game {
-            action: GameAction::ApplyForJob { employer: _ },
+            action:
+                GameAction::ApplyForJob {
+                    employer: _,
+                    position: _,
+                },
         } => "a",
         Command::Game {
             action: GameAction::BuyBeer { cost: _ },
@@ -347,8 +368,12 @@ fn get_command_input(command: Command) -> &'static str {
 fn get_command_description(command: Command) -> String {
     match command {
         Command::Game {
-            action: GameAction::ApplyForJob { employer: _ },
-        } => "Apply for a job.".to_owned(),
+            action:
+                GameAction::ApplyForJob {
+                    employer: _,
+                    position,
+                },
+        } => format!("Apply for a job as {}.", format_position(position)),
         Command::Game {
             action: GameAction::BuyBeer { cost },
         } => format!("Buy a beer. (${})", cost),
@@ -445,12 +470,13 @@ fn print_event(event: Event) -> String {
             "Congrats! You got the job at {}. You start on Day {}.",
             job.business.name, job.next_work_day
         ),
-        Event::LocationChanged { to: location } => print_location(location),
+        Event::LocationChanged { to: location } => match location {
+            Location::TenundaBrewery => "You are at the Tenunda Brewery.".to_owned(),
+            Location::TenundaHotel => "You are at the Tenunda Hotel.".to_owned(),
+            Location::TenundaStreets => "You are on the streets of Tenunda.".to_owned(),
+        },
         Event::Slept => "Zzzzzzz...".to_owned(),
-        Event::Worked { job } => format!(
-            "You worked a shift at {}. You're next shift is Day {}.",
-            job.business.name, job.next_work_day
-        ),
+        Event::Worked { job } => format!("$$$ You're next shift is Day {}.", job.next_work_day),
     }
 }
 
