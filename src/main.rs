@@ -49,7 +49,7 @@ impl GameState {
 
         match turn.command {
             Command::System { action } => self.apply_system_action(action),
-            Command::Player { action } => self.apply_player_action(action),
+            Command::Game { action } => self.apply_player_action(action),
         }
     }
 
@@ -161,10 +161,10 @@ impl GameState {
             });
         }
 
-        let player_actions = self.player_state.location.available_actions(&self);
-        for i in 0..player_actions.len() {
-            out.push(Command::Player {
-                action: player_actions[i],
+        let game_actions = self.player_state.location.available_actions(&self);
+        for i in 0..game_actions.len() {
+            out.push(Command::Game {
+                action: game_actions[i],
             });
         }
 
@@ -288,7 +288,7 @@ const TENUNDA_BREWING: Business = Business {
 #[derive(Clone, Copy)]
 enum Command {
     System { action: SystemAction },
-    Player { action: GameAction },
+    Game { action: GameAction },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -329,34 +329,34 @@ fn print_location(location: Location) -> String {
 
 fn get_command_input(command: Command) -> &'static str {
     match command {
-        Command::Player {
+        Command::Game {
             action: GameAction::ApplyForJob { employer: _ },
         } => "j",
-        Command::Player {
+        Command::Game {
             action: GameAction::BuyBeer { cost: _ },
         } => "b",
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaBrewery,
                 },
         } => "b",
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaHotel,
                 },
         } => "h",
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaStreets,
                 },
         } => "o",
-        Command::Player {
+        Command::Game {
             action: GameAction::Sleep { cost: _ },
         } => "s",
-        Command::Player {
+        Command::Game {
             action: GameAction::Work,
         } => "w",
         Command::System {
@@ -370,37 +370,37 @@ fn get_command_input(command: Command) -> &'static str {
 
 fn get_command_description(command: Command) -> String {
     match command {
-        Command::Player {
+        Command::Game {
             action: GameAction::ApplyForJob { employer: _ },
         } => "Apply for a job.".to_owned(),
-        Command::Player {
+        Command::Game {
             action: GameAction::BuyBeer { cost },
         } => format!("Buy a beer. (${})", cost),
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaBrewery,
                 },
         } => "Go to the brewery.".to_owned(),
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaHotel,
                 },
         } => "Go to the hotel.".to_owned(),
-        Command::Player {
+        Command::Game {
             action:
                 GameAction::Go {
                     destination: Location::TenundaStreets,
                 },
         } => "Go outside.".to_owned(),
-        Command::Player {
+        Command::Game {
             action: GameAction::Sleep { cost: Some(cost) },
         } => format!("Sleep. (${})", cost),
-        Command::Player {
+        Command::Game {
             action: GameAction::Sleep { cost: None },
         } => "Sleep.".to_owned(),
-        Command::Player {
+        Command::Game {
             action: GameAction::Work,
         } => "Work.".to_owned(),
 
@@ -427,8 +427,8 @@ fn print_commands(game_state: &GameState) {
     });
 
     commands.sort_by(|a, b| match (a, b) {
-        (Command::Player { action: _ }, Command::System { action: _ }) => Ordering::Less,
-        (Command::System { action: _ }, Command::Player { action: _ }) => Ordering::Greater,
+        (Command::Game { action: _ }, Command::System { action: _ }) => Ordering::Less,
+        (Command::System { action: _ }, Command::Game { action: _ }) => Ordering::Greater,
         (_, _) => Ordering::Equal,
     });
 
