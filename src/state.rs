@@ -29,18 +29,20 @@ impl GameState {
     }
 
     pub fn apply_turn(mut self, turn: Turn) -> Self {
-        let mut hire = Vec::new();
-        for i in 0..self.player_state.job_applications.len() {
-            if self.day > self.player_state.job_applications[i].application_day {
-                hire.push(self.player_state.job_applications[i]);
-            }
-        }
-        for &job_app in &hire {
-            self.player_state.job_applications.retain(|a| *a != job_app);
-            self.hire_for_job(job_app);
-        }
+        self = self.hire_jobs();
 
         self.apply_player_action(turn.action)
+    }
+
+    fn hire_jobs(mut self) -> Self {
+        match self.player_state.job_applications.first() {
+            Some(&application) if application.application_day < self.day => {
+                self.player_state.job_applications.retain(|&a| a != application);
+                self.hire_for_job(application);
+                self.hire_jobs()
+            },
+            _ => self,
+        }
     }
 
     fn apply_player_action(mut self, action: GameAction) -> Self {
