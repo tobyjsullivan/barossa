@@ -82,7 +82,7 @@ fn get_command_input(command: Command) -> &'static str {
             action: GameAction::Sleep { cost: _ },
         } => "s",
         Command::Game {
-            action: GameAction::Work,
+            action: GameAction::Work { job: _ },
         } => "w",
         Command::System {
             action: SystemAction::Exit,
@@ -127,8 +127,8 @@ fn get_command_description(command: Command) -> String {
             action: GameAction::Sleep { cost: None },
         } => "Sleep.".to_owned(),
         Command::Game {
-            action: GameAction::Work,
-        } => "Work.".to_owned(),
+            action: GameAction::Work { job },
+        } => format!("Work. (+${})", job.pay),
 
         Command::System {
             action: SystemAction::Exit,

@@ -18,7 +18,7 @@ impl Location {
             if job.business.location == *self {
                 employed_here = true;
                 if job.next_work_day == game_state.day {
-                    out.push(GameAction::Work);
+                    out.push(GameAction::Work { job });
                 }
             }
         }

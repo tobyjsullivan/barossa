@@ -38,9 +38,10 @@ impl GameState {
         match self.player_state.job_applications.first() {
             Some(&application) if application.application_day < self.day => {
                 self.player_state.job_applications.retain(|&a| a != application);
-                self.hire_for_job(application);
-                self.hire_jobs()
+                self.hire_for_job(application)
+                    .hire_jobs() // Recurse
             },
+            // Base case
             _ => self,
         }
     }
@@ -48,89 +49,90 @@ impl GameState {
     fn apply_player_action(mut self, action: GameAction) -> Self {
         match action {
             GameAction::ApplyForJob { employer, position } => {
-                self.apply_for_job(employer, position);
-                self
+                self.apply_for_job(employer, position)
             }
             GameAction::BuyBeer { cost } => {
-                self.drink_beer();
-                self.change_balance(0 - cost);
-                self
+                self.drink_beer()
+                    .change_balance(0 - cost)
             }
             GameAction::Go { destination } => {
-                self.change_location(destination);
-                self
+                self.change_location(destination)
             }
             GameAction::Sleep { cost } => {
-                self.sleep();
-                self.change_day(1);
+                self = self.sleep();
                 if let Some(cost) = cost {
-                    self.change_balance(0 - cost);
+                    self = self.change_balance(0 - cost);
                 }
 
                 self
             }
-            GameAction::Work => {
-                self.work();
-                self
+            GameAction::Work { job } => {
+                self.work(job)
             }
         }
     }
 
-    fn apply_for_job(&mut self, employer: Business, position: Position) {
+    fn apply_for_job(mut self, employer: Business, position: Position) -> Self {
         self.player_state.job_applications.push(JobApplication {
             application_day: self.day,
             business: employer,
             position,
         });
-        self.event_log.push(Event::AppliedForJob { employer });
+        self.push_event(Event::AppliedForJob { employer })
     }
 
-    fn change_balance(&mut self, delta: i64) {
+    fn change_balance(mut self, delta: i64) -> Self {
         let to = self.player_state.balance + delta;
         self.player_state.balance = to;
-        self.event_log.push(Event::BalanceChanged { to });
+        self.push_event(Event::BalanceChanged { to })
     }
 
-    fn change_day(&mut self, delta: u8) {
+    fn change_day(mut self, delta: u8) -> Self {
         let to = self.day + delta;
         self.day = to;
-        self.event_log.push(Event::DayChanged { to });
+        self.push_event(Event::DayChanged { to })
     }
 
-    fn change_location(&mut self, to: Location) {
+    fn change_location(mut self, to: Location) -> Self {
         self.player_state.location = to;
-        self.event_log.push(Event::LocationChanged { to });
+        self.push_event(Event::LocationChanged { to })
     }
 
-    fn drink_beer(&mut self) {
-        self.event_log.push(Event::DrankBeer);
+    fn drink_beer(self) -> Self {
+        self.push_event(Event::DrankBeer)
     }
 
-    fn hire_for_job(&mut self, application: JobApplication) {
+    fn hire_for_job(self, application: JobApplication) -> Self {
         let job = Job {
             business: application.business,
             next_work_day: self.day + 1,
             pay: 200,
             position: application.position,
         };
-        self.player_state.job = Some(job);
-        self.event_log.push(Event::Hired { job });
+        self.update_job(Some(job))
+            .push_event(Event::Hired { job })
     }
 
-    fn sleep(&mut self) {
-        self.event_log.push(Event::Slept);
+    fn push_event(mut self, event: Event) -> Self {
+        self.event_log.push(event);
+        self
     }
 
-    fn work(&mut self) {
-        let mut pay = None;
-        if let Some(mut job) = self.player_state.job.as_mut() {
-            pay = Some(job.pay);
-            job.next_work_day = self.day + 1;
-            self.event_log.push(Event::Worked { job: *job });
-        }
-        if let Some(pay) = pay {
-            self.change_balance(pay as i64);
-        }
+    fn sleep(self) -> Self {
+        self.push_event(Event::Slept)
+            .change_day(1)
+    }
+
+    fn update_job(mut self, job: Option<Job>) -> Self {
+        self.player_state.job = job;
+        self
+    }
+
+    fn work(self, job: Job) -> Self {
+        let (job, pay) = job.work();
+        self.update_job(Some(job))
+            .push_event(Event::Worked { job: job })
+            .change_balance(pay as i64)
     }
 }
 

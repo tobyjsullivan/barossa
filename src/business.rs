@@ -18,12 +18,19 @@ pub struct JobApplication {
     pub position: Position,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Job {
     pub business: Business,
     pub position: Position,
     pub next_work_day: u8,
     pub pay: u64,
+}
+
+impl Job {
+    pub fn work(mut self) -> (Self, u64) {
+        self.next_work_day += 1;
+        (self, self.pay)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
