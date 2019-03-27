@@ -37,10 +37,11 @@ impl GameState {
     fn hire_jobs(mut self) -> Self {
         match self.player_state.job_applications.first() {
             Some(&application) if application.application_day < self.day => {
-                self.player_state.job_applications.retain(|&a| a != application);
-                self.hire_for_job(application)
-                    .hire_jobs() // Recurse
-            },
+                self.player_state
+                    .job_applications
+                    .retain(|&a| a != application);
+                self.hire_for_job(application).hire_jobs() // Recurse
+            }
             // Base case
             _ => self,
         }
@@ -51,13 +52,8 @@ impl GameState {
             GameAction::ApplyForJob { employer, position } => {
                 self.apply_for_job(employer, position)
             }
-            GameAction::BuyBeer { cost } => {
-                self.drink_beer()
-                    .change_balance(0 - cost)
-            }
-            GameAction::Go { destination } => {
-                self.change_location(destination)
-            }
+            GameAction::BuyBeer { cost } => self.drink_beer().change_balance(0 - cost),
+            GameAction::Go { destination } => self.change_location(destination),
             GameAction::Sleep { cost } => {
                 self = self.sleep();
                 if let Some(cost) = cost {
@@ -66,9 +62,7 @@ impl GameState {
 
                 self
             }
-            GameAction::Work { job } => {
-                self.work(job)
-            }
+            GameAction::Work { job } => self.work(job),
         }
     }
 
@@ -109,8 +103,7 @@ impl GameState {
             pay: 200,
             position: application.position,
         };
-        self.update_job(Some(job))
-            .push_event(Event::Hired { job })
+        self.update_job(Some(job)).push_event(Event::Hired { job })
     }
 
     fn push_event(mut self, event: Event) -> Self {
@@ -119,8 +112,7 @@ impl GameState {
     }
 
     fn sleep(self) -> Self {
-        self.push_event(Event::Slept)
-            .change_day(1)
+        self.push_event(Event::Slept).change_day(1)
     }
 
     fn update_job(mut self, job: Option<Job>) -> Self {

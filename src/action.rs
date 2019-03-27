@@ -16,7 +16,9 @@ pub enum GameAction {
     Sleep {
         cost: Option<i64>,
     },
-    Work { job: Job },
+    Work {
+        job: Job,
+    },
 }
 
 pub struct Turn {
